@@ -85,28 +85,60 @@ export async function getDirectory(req, res, next) {
 }
  
 // GET /api/instructors/search?name=...&department=...&role=...
+
 export async function searchInstructors(req, res, next) {
   try {
-    const { error, value } = searchSchema.validate(req.query, { abortEarly: true });
-    if (error) {
-      return res.status(400).json({ message: error.details[0].message });
+    // Only accept known search fields with plain string values.
+    // Ignore unknown fields and objects containing MongoDB operators.
+    const safeQuery = {};
+
+    for (const field of ['name', 'department', 'role']) {
+      if (typeof req.query[field] === 'string') {
+        safeQuery[field] = req.query[field];
+      }
     }
- 
-    // Build the filter ourselves from validated strings: no client-supplied
-    // object or operator can ever reach the database.
+
+    const { error, value } = searchSchema.validate(safeQuery, {
+      abortEarly: true
+    });
+
+    if (error) {
+      return res.status(400).json({
+        message: error.details[0].message
+      });
+    }
+
+    // Build the MongoDB filter using validated strings only.
     const filter = {};
-    if (value.name) filter.name = { $regex: escapeRegex(value.name), $options: 'i' };
-    if (value.department) filter.department = { $regex: escapeRegex(value.department), $options: 'i' };
-    if (value.role) filter.role = value.role;
- 
+
+    if (value.name) {
+      filter.name = {
+        $regex: escapeRegex(value.name),
+        $options: 'i'
+      };
+    }
+
+    if (value.department) {
+      filter.department = {
+        $regex: escapeRegex(value.department),
+        $options: 'i'
+      };
+    }
+
+    if (value.role) {
+      filter.role = value.role;
+    }
+
     const instructors = await Instructor.find(filter)
       .select('name department role')
       .sort({ name: 1 })
       .lean();
-    res.json({ count: instructors.length, instructors });
+
+    res.json({
+      count: instructors.length,
+      instructors
+    });
   } catch (err) {
     next(err);
   }
 }
- 
-
